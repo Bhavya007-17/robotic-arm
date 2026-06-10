@@ -51,7 +51,7 @@ User instruction (text / voice)
           │ pick / place / find_object / look_at_scene
           ▼
 ┌───────────────────┐
-│  Skills (skills.py)│  high-level manipulation primitives
+│ Skills (skills.py)│  high-level manipulation primitives
 └─────────┬─────────┘
           │
           ▼
