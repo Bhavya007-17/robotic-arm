@@ -57,10 +57,10 @@ Camera definitions in the scene files:
 **Example session** (CLI):
 
 ```
-> put the green box on the shelf
+> put the red box on the shelf
 agent: understood (local)
-  [tool call] pick({'object_name': 'green'})
-  [tool result] Picked up the green box; it is now held at z=0.614.
+  [tool call] pick({'object_name': 'red'})
+  [tool result] Picked up the red box; it is now held at z=0.614.
   [tool call] place({'location_name': 'shelf'})
   [tool result] Placed the held box on a free spot on the shelf and released it.
 ```
