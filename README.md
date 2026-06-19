@@ -15,9 +15,44 @@ The workspace contains four colored cubes (red, green, blue, yellow) on a table 
 
 ## Demo
 
-| Initial scene | After pick & place |
+Screenshots captured by `python capture_demo.py` — a headless pick-and-place run that saves frames from both cameras at each stage.
+
+### Pick & place workflow
+
+| Initial scene | Holding red box | Red box on shelf |
+|:---:|:---:|:---:|
+| ![Initial scene](docs/images/01_initial_scene.png) | ![Holding red box](docs/images/03_holding_red.png) | ![Red box on shelf](docs/images/04_red_on_shelf.png) |
+
+### Dual-camera views
+
+The simulation exposes two MuJoCo cameras used by the agent, chat UI, and screenshot script:
+
+| Camera | View | Defined in | Used by |
+|--------|------|------------|---------|
+| `front_34` | Fixed 3/4 external view of the full workspace | `models/scene.xml` | `agent.py`, `chat_ui.py`, `capture_demo.py` |
+| `wrist_cam` | First-person view from the gripper | `models/panda.xml` | `agent.py`, `chat_ui.py`, `capture_demo.py` |
+
+**External camera (`front_34`)** — wide workspace overview for scene understanding and monitoring motion:
+
+| Before pick | After place |
 |:---:|:---:|
-| ![Initial scene](docs/images/01_initial_scene.png) | ![Red box on shelf](docs/images/04_red_on_shelf.png) |
+| ![External — initial](docs/images/01_initial_scene.png) | ![External — after place](docs/images/04_red_on_shelf.png) |
+
+**Wrist camera (`wrist_cam`)** — close-up gripper view for grasp alignment and object identification:
+
+| Before pick | After place |
+|:---:|:---:|
+| ![Wrist — initial](docs/images/02_wrist_initial.png) | ![Wrist — after place](docs/images/05_wrist_after_place.png) |
+
+Camera definitions in the scene files:
+
+```xml
+<!-- models/scene.xml — fixed external 3/4 view -->
+<camera name="front_34" pos="1.4 -1.0 1.2" xyaxes="0.673 0.740 0 -0.315 0.287 0.905"/>
+
+<!-- models/panda.xml — mounted on the gripper hand -->
+<camera name="wrist_cam" pos="0.07 0 0.03" xyaxes="0 -1 0 -1 0 0" fovy="75"/>
+```
 
 **Example session** (CLI):
 
