@@ -226,7 +226,11 @@ def place(location_name: str) -> str:
 
 
 def _nim_chat(messages, tools=None, max_tokens=256, timeout=120):
-    """Call NVIDIA NIM chat/completions directly (avoids LangGraph 504 timeouts)."""
+    """Call NVIDIA NIM chat/completions directly (avoids a LangGraph 504 timeout)."""
+    if not NIM_API_KEY:
+        raise RuntimeError(
+            "this request needs NVIDIA NIM, but NVIDIA_API_KEY is not set"
+        )
     payload = {
         "model": NIM_MODEL,
         "messages": messages,
@@ -299,10 +303,22 @@ def _local_plan(text):
 
 
 def build_agent():
+    """Pick up the NIM key if there is one.
+
+    A missing key is not fatal: the local regex fast-path covers the common
+    pick/place phrasings without any network call, which is what the README
+    promises. Only ambiguous requests and vision actually need NIM, and
+    _nim_chat raises a clear error if it is reached without a key.
+    """
     global NIM_API_KEY
     NIM_API_KEY = os.environ.get("NVIDIA_API_KEY") or os.environ.get("NVAPI_API_KEY")
     if not NIM_API_KEY:
-        sys.exit("Set NVIDIA_API_KEY before running agent.py")
+        print(
+            "warning: NVIDIA_API_KEY is not set - running offline. Common "
+            "pick/place commands work; ambiguous requests and vision will fail.",
+            file=sys.stderr,
+            flush=True,
+        )
     return object()  # placeholder; run_instruction is self-contained
 
 

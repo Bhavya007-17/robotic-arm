@@ -1,9 +1,14 @@
 """Tkinter chat window for the robot arm agent.
 
 Main thread runs the chat UI. A worker thread owns the SimEnv (with the MuJoCo
-viewer) and the LangGraph agent: it idle-steps the simulation when no
-instruction is pending and runs agent instructions from a queue. The worker
-posts chat lines back to the UI through a second queue.
+viewer) and the agent: it idle-steps the simulation when no instruction is
+pending and runs agent instructions from a queue. The worker posts chat lines
+back to the UI through a second queue.
+
+Voice input is push-to-talk: hold the Mic button to record, release to
+transcribe locally with faster-whisper (see voice.py). The transcript is queued
+exactly as a typed instruction would be. Transcription runs on its own thread so
+neither the Tk main loop nor the sim worker blocks while Whisper runs.
 
 Usage:
     python chat_ui.py [--test "pick up the blue box and put it on the shelf"]
@@ -12,6 +17,7 @@ Usage:
 import argparse
 import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import scrolledtext
 
@@ -20,6 +26,7 @@ import PIL.Image
 import PIL.ImageTk
 
 import agent as agent_mod
+import voice
 from agent import build_agent, run_instruction
 from sim_env import SimEnv
 
@@ -28,6 +35,7 @@ FEED_INTERVAL_MS = 150
 
 instructions = queue.Queue()  # UI -> worker
 outgoing = queue.Queue()  # worker -> UI
+statuses = queue.Queue()  # voice threads -> UI status label
 shutdown = threading.Event()
 
 
@@ -44,11 +52,11 @@ def worker():
     emit("system: Robot ready. Boxes on the table: red, green, blue, yellow.")
     while not shutdown.is_set():
         try:
-            text = instructions.get(timeout=0.0)
+            text, source = instructions.get(timeout=0.0)
         except queue.Empty:
             agent_mod.ENV.step_settle(10)  # keep physics/viewer alive while idle
             continue
-        emit(f"you: {text}")
+        emit(f"you ({source}): {text}" if source else f"you: {text}")
         try:
             run_instruction(agent, text, emit=emit)
         except Exception as e:
@@ -122,15 +130,85 @@ def main():
         text = entry.get().strip()
         if text:
             entry.delete(0, tk.END)
-            instructions.put(text)
+            instructions.put((text, None))
 
     tk.Button(entry_row, text="Send", command=send).pack(side=tk.LEFT, padx=(6, 0))
     entry.bind("<Return>", send)
+
+    # --- Voice: push-to-talk ------------------------------------------------
+
+    mic = tk.Button(entry_row, text="🎤 Hold to talk", state=tk.DISABLED)
+    mic.pack(side=tk.LEFT, padx=(6, 0))
+    status = tk.Label(root, text="voice: starting…", anchor=tk.W, fg="#666")
+    status.pack(fill=tk.X, padx=8, pady=(0, 6))
+
+    transcriber = voice.Transcriber()
+    recorder = voice.Recorder()
+    take = {"started_at": None}
+
+    def set_status(text):
+        statuses.put(text)
+
+    def load_model():
+        try:
+            transcriber.load()
+        except Exception as e:
+            set_status(f"voice: unavailable ({e})")
+            return
+        set_status(f"voice: ready ({transcriber.model_name}) — hold to talk")
+        mic.after(0, lambda: mic.configure(state=tk.NORMAL))
+
+    def on_mic_press(event=None):
+        if not transcriber.ready:
+            set_status("voice: model still loading…")
+            return
+        try:
+            recorder.start()
+        except Exception as e:
+            set_status(f"voice: microphone error ({e})")
+            return
+        take["started_at"] = time.time()
+        set_status("voice: listening… release to send")
+
+    def on_mic_release(event=None):
+        if take["started_at"] is None:
+            return
+        held = time.time() - take["started_at"]
+        take["started_at"] = None
+        try:
+            audio = recorder.stop()
+        except Exception as e:
+            set_status(f"voice: microphone error ({e})")
+            return
+        set_status(f"voice: transcribing {held:.1f}s…")
+        threading.Thread(target=transcribe, args=(audio,), daemon=True).start()
+
+    def transcribe(audio):
+        started = time.time()
+        try:
+            text = transcriber.transcribe(audio)
+        except Exception as e:
+            set_status(f"voice: transcription failed ({e})")
+            return
+        elapsed = time.time() - started
+        if not text:
+            set_status("voice: no speech detected — nothing sent")
+            return
+        set_status(f"voice: heard in {elapsed:.1f}s — hold to talk")
+        instructions.put((text, "voice"))
+
+    mic.bind("<ButtonPress-1>", on_mic_press)
+    mic.bind("<ButtonRelease-1>", on_mic_release)
 
     def poll():
         try:
             while True:
                 append(outgoing.get_nowait())
+        except queue.Empty:
+            pass
+        try:
+            while True:
+                status.configure(text=statuses.get_nowait())
         except queue.Empty:
             pass
         root.after(100, poll)
@@ -142,8 +220,9 @@ def main():
     root.protocol("WM_DELETE_WINDOW", on_close)
 
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=load_model, daemon=True).start()
     if args.test:
-        instructions.put(args.test)
+        instructions.put((args.test, None))
     root.after(100, poll)
     root.after(500, update_feeds)
     root.mainloop()

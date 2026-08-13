@@ -10,3 +10,5 @@ Thumbs.db
 mujoco_menagerie/
 quota_probe.txt
 nim_probe.py
+.coverage
+.pytest_cache/
